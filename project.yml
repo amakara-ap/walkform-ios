@@ -1,0 +1,26 @@
+name: WalkForm
+options:
+  bundleIdPrefix: com.aistudio.walkform
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  WalkForm:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: WalkForm
+    info:
+      path: WalkForm/Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aistudio.walkform.aiwkgx
+        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "1.0.0"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_FILE: WalkForm/Info.plist
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.0"
+        ENABLE_BITCODE: "NO"
