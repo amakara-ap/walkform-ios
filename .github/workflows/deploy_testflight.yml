@@ -1,0 +1,106 @@
+name: Deploy WalkForm to TestFlight
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Build & Upload to TestFlight
+    runs-on: macos-14
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install xcodegen
+        run: |
+          brew install xcodegen
+
+      - name: Generate Xcode Project
+        run: |
+          xcodegen generate
+
+      - name: Setup Fastlane
+        run: |
+          mkdir -p fastlane
+          cat << 'EOF' > fastlane/Appfile
+          app_identifier("com.aistudio.walkform.aiwkgx")
+          EOF
+
+          cat << 'EOF' > fastlane/Fastfile
+          default_platform(:ios)
+
+          platform :ios do
+            desc "Push a new build to TestFlight"
+            lane :beta do
+              api_key = app_store_connect_api_key(
+                key_id: ENV["APPSTORE_KEY_ID"],
+                issuer_id: ENV["APPSTORE_ISSUER_ID"],
+                key_content: ENV["APPSTORE_PRIVATE_KEY"],
+                is_key_content_base64: false,
+                in_house: false
+              )
+
+              keychain_name = "ci_keychain"
+              keychain_password = "ci_password_123"
+
+              create_keychain(
+                name: keychain_name,
+                password: keychain_password,
+                default_keychain: true,
+                unlock: true,
+                timeout: 3600
+              )
+
+              get_certificates(
+                api_key: api_key,
+                type: "distribution",
+                keychain_name: keychain_name,
+                keychain_password: keychain_password
+              )
+
+              get_provisioning_profile(
+                api_key: api_key,
+                app_identifier: "com.aistudio.walkform.aiwkgx",
+                type: "appstore"
+              )
+
+              update_project_provisioning(
+                xcodeproj: "WalkForm.xcodeproj",
+                profile: ENV["SIGH_PROFILE_PATH"],
+                target_filter: "WalkForm",
+                build_configuration: "Release"
+              )
+
+              build_app(
+                project: "WalkForm.xcodeproj",
+                scheme: "WalkForm",
+                configuration: "Release",
+                export_method: "app-store",
+                clean: true,
+                export_options: {
+                  signingStyle: "manual",
+                  provisioningProfiles: {
+                    "com.aistudio.walkform.aiwkgx" => ENV["SIGH_NAME"]
+                  }
+                }
+              )
+
+              upload_to_testflight(
+                api_key: api_key,
+                skip_waiting_for_build_processing: true
+              )
+            end
+          end
+          EOF
+
+      - name: Build and Deploy via Fastlane
+        env:
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+        run: |
+          fastlane beta
