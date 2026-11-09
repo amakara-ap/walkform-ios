@@ -16,110 +16,54 @@ jobs:
       - name: Select Xcode Version
         run: sudo xcode-select -switch /Applications/Xcode.app
 
-      - name: Install xcodegen and fastlane
-        run: |
-          brew install xcodegen
-          gem install bundler
-          gem install fastlane
+      - name: Install xcodegen
+        run: brew install xcodegen
 
       - name: Generate Xcode Project
+        run: xcodegen generate
+
+      - name: Setup App Store Connect API Key
         run: |
-          xcodegen generate
+          mkdir -p ~/.appstoreconnect/private_keys
+          echo "${{ secrets.APPSTORE_PRIVATE_KEY }}" > ~/.appstoreconnect/private_keys/AuthKey_${{ secrets.APPSTORE_KEY_ID }}.p8
 
-      - name: Create Fastfile
+      - name: Build Archive
         run: |
-          mkdir -p fastlane
-          cat << 'EOF' > fastlane/Fastfile
-          default_platform(:ios)
+          xcodebuild archive \
+            -project WalkForm.xcodeproj \
+            -scheme WalkForm \
+            -configuration Release \
+            -archivePath build/WalkForm.xcarchive \
+            -destination "generic/platform=iOS" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_${{ secrets.APPSTORE_KEY_ID }}.p8 \
+            -authenticationKeyID ${{ secrets.APPSTORE_KEY_ID }} \
+            -authenticationKeyIssuerID ${{ secrets.APPSTORE_ISSUER_ID }} \
+            DEVELOPMENT_TEAM=5RBBPXKGSL
 
-          platform :ios do
-            desc "Build and upload to TestFlight"
-            lane :beta do
-              api_key = app_store_connect_api_key(
-                key_id: ENV["APPSTORE_KEY_ID"],
-                issuer_id: ENV["APPSTORE_ISSUER_ID"],
-                key_content: ENV["APPSTORE_PRIVATE_KEY"],
-                is_key_content_base64: false,
-                in_house: false
-              )
-
-              keychain_name = "build_keychain"
-              keychain_password = "temporary_password"
-
-              create_keychain(
-                name: keychain_name,
-                password: keychain_password,
-                default_keychain: true,
-                unlock: true,
-                timeout: 3600,
-                lock_when_sleeps: false
-              )
-
-              cert(
-                api_key: api_key,
-                keychain_path: File.expand_path("~/Library/Keychains/#{keychain_name}-db"),
-                keychain_password: keychain_password,
-                skip_set_partition_list: true
-              )
-
-              sigh(
-                api_key: api_key,
-                app_identifier: "com.aistudio.walkform.aiwkgx",
-                force: true
-              )
-
-              profile_files = Dir.glob("{.,..}/*.mobileprovision")
-              profile_path = profile_files.first
-              UI.user_error!("No provisioning profile found!") unless profile_path
-
-              team_id = sh("security cms -D -i \"#{profile_path}\" | plutil -extract TeamIdentifier.0 raw -").strip
-              profile_name = sh("security cms -D -i \"#{profile_path}\" | plutil -extract Name raw -").strip
-              profile_uuid = sh("security cms -D -i \"#{profile_path}\" | plutil -extract UUID raw -").strip
-
-              UI.message("Extracted Team ID: #{team_id}")
-              UI.message("Extracted Profile Name: #{profile_name}")
-              UI.message("Extracted Profile UUID: #{profile_uuid}")
-
-              update_project_team(
-                path: "WalkForm.xcodeproj",
-                teamid: team_id
-              )
-
-              # Xcodeの署名設定をReleaseビルド向けに強制適用
-              update_project_provisioning(
-                xcodeproj: "WalkForm.xcodeproj",
-                profile: profile_path,
-                target_filter: "WalkForm",
-                build_configuration: "Release"
-              )
-
-              build_app(
-                project: "WalkForm.xcodeproj",
-                scheme: "WalkForm",
-                configuration: "Release",
-                export_method: "app-store",
-                export_options: {
-                  signingStyle: "manual",
-                  teamID: team_id,
-                  provisioningProfiles: {
-                    "com.aistudio.walkform.aiwkgx" => profile_name
-                  }
-                },
-                xcargs: "DEVELOPMENT_TEAM=#{team_id} PROVISIONING_PROFILE_SPECIFIER=\"#{profile_name}\" CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=\"Apple Distribution\""
-              )
-
-              upload_to_testflight(
-                api_key: api_key,
-                skip_waiting_for_build_processing: true
-              )
-            end
-          end
+      - name: Export and Upload to TestFlight
+        run: |
+          cat << 'EOF' > exportOptions.plist
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>app-store</string>
+              <key>destination</key>
+              <string>upload</string>
+              <key>signingStyle</key>
+              <string>automatic</string>
+              <key>teamID</key>
+              <string>5RBBPXKGSL</string>
+          </dict>
+          </plist>
           EOF
 
-      - name: Build and Deploy via Fastlane
-        env:
-          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
-          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
-          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
-        run: |
-          fastlane beta
+          xcodebuild -exportArchive \
+            -archivePath build/WalkForm.xcarchive \
+            -exportOptionsPlist exportOptions.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_${{ secrets.APPSTORE_KEY_ID }}.p8 \
+            -authenticationKeyID ${{ secrets.APPSTORE_KEY_ID }} \
+            -authenticationKeyIssuerID ${{ secrets.APPSTORE_ISSUER_ID }}
