@@ -64,11 +64,8 @@ jobs:
                 app_identifier: "com.aistudio.walkform.aiwkgx"
               )
 
-              team_id = lane_context[SharedValues::SIGH_TEAM_ID]
-              if team_id.nil? || team_id.empty?
-                output = `security cms -D -i "#{ENV['SIGH_PROFILE_PATH']}"`
-                team_id = output[/<key>TeamIdentifier<\/key>\s*<array>\s*<string>([^<]+)<\/string>/m, 1]
-              end
+              output = `security cms -D -i "#{ENV['SIGH_PROFILE_PATH']}"`
+              team_id = output[/<key>TeamIdentifier<\/key>\s*<array>\s*<string>([^<]+)<\/string>/m, 1]
               puts "=== Detected Apple Team ID: #{team_id} ==="
 
               update_project_team(
