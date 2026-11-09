@@ -2,100 +2,102 @@ name: Deploy WalkForm to TestFlight
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
-  deploy:
-    name: Build & Upload to TestFlight
+  build_and_deploy:
     runs-on: macos-latest
-    timeout-minutes: 45
 
     steps:
-      - name: Checkout Code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install xcodegen
+      - name: Select Xcode Version
+        run: sudo xcode-select -switch /Applications/Xcode.app
+
+      - name: Install xcodegen and fastlane
         run: |
           brew install xcodegen
+          gem install bundler
+          gem install fastlane
 
       - name: Generate Xcode Project
         run: |
+          cd ios
           xcodegen generate
 
-      - name: Prepare Keychain
+      - name: Create Fastfile
         run: |
-          security unlock-keychain -p "" ~/Library/Keychains/login.keychain-db || true
-
-      - name: Setup Fastlane
-        run: |
-          mkdir -p fastlane
-          cat << 'EOF' > fastlane/Appfile
-          app_identifier("com.aistudio.walkform.aiwkgx")
-          EOF
-
-          cat << 'EOF' > fastlane/Fastfile
+          mkdir -p ios/fastlane
+          cat << 'EOF' > ios/fastlane/Fastfile
           default_platform(:ios)
 
           platform :ios do
-            desc "Push a new build to TestFlight"
+            desc "Build and upload to TestFlight"
             lane :beta do
-              key_id = ENV["APPSTORE_KEY_ID"].to_s.strip
-              issuer_id = ENV["APPSTORE_ISSUER_ID"].to_s.strip
-              raw_key = ENV["APPSTORE_PRIVATE_KEY"].to_s.gsub("\r\n", "\n").strip
-
-              key_path = File.expand_path("~/AuthKey_#{key_id}.p8")
-              File.write(key_path, raw_key + "\n")
-
               api_key = app_store_connect_api_key(
-                key_id: key_id,
-                issuer_id: issuer_id,
-                key_filepath: key_path,
+                key_id: ENV["APPSTORE_KEY_ID"],
+                issuer_id: ENV["APPSTORE_ISSUER_ID"],
+                key_content: ENV["APPSTORE_PRIVATE_KEY"],
+                is_key_content_base64: false,
                 in_house: false
               )
 
-              get_certificates(
+              # 一時キーチェーンを作成してコード署名環境をセットアップ
+              keychain_name = "fastlane_tmp_keychain"
+              keychain_password = "fastlane_password"
+
+              create_keychain(
+                name: keychain_name,
+                password: keychain_password,
+                default_keychain: true,
+                unlock: true,
+                timeout: 3600,
+                lock_when_sleeps: false
+              )
+
+              # 証明書を生成・インポート
+              cert(
                 api_key: api_key,
+                keychain_path: File.expand_path("~/Library/Keychains/#{keychain_name}-db"),
+                keychain_password: keychain_password,
                 skip_set_partition_list: true
               )
 
-              get_provisioning_profile(
+              # プロビジョニングプロファイルを生成・インストール
+              sigh(
                 api_key: api_key,
-                app_identifier: "com.aistudio.walkform.aiwkgx"
+                app_identifier: "com.aistudio.walkform.aiwkgx",
+                force: true
               )
 
-              output = `security cms -D -i "#{ENV['SIGH_PROFILE_PATH']}"`
-              team_id = output[/<key>TeamIdentifier<\/key>\s*<array>\s*<string>([^<]+)<\/string>/m, 1]
-              puts "=== Detected Apple Team ID: #{team_id} ==="
+              # プロビジョニングプロファイルからTeam IDを正確に取得
+              profile_path = ENV["SIGH_PROFILE_PATH"]
+              team_id = sh("security cms -D -i \"#{profile_path}\" | plutil -extract TeamIdentifier.0 raw -").strip
+              UI.message("Extracted Team ID: #{team_id}")
 
+              # プロジェクトにTeam IDを設定
               update_project_team(
                 path: "WalkForm.xcodeproj",
                 teamid: team_id
               )
 
-              update_project_provisioning(
-                xcodeproj: "WalkForm.xcodeproj",
-                profile: ENV["SIGH_PROFILE_PATH"],
-                target_filter: "WalkForm",
-                build_configuration: "Release"
-              )
-
+              # アプリのビルド
               build_app(
                 project: "WalkForm.xcodeproj",
                 scheme: "WalkForm",
-                configuration: "Release",
                 export_method: "app-store",
-                clean: true,
-                xcargs: "DEVELOPMENT_TEAM=#{team_id} CODE_SIGN_STYLE=Manual",
                 export_options: {
                   signingStyle: "manual",
-                  teamID: team_id,
                   provisioningProfiles: {
                     "com.aistudio.walkform.aiwkgx" => ENV["SIGH_NAME"]
                   }
-                }
+                },
+                xcargs: "DEVELOPMENT_TEAM=#{team_id}"
               )
 
+              # TestFlightへアップロード
               upload_to_testflight(
                 api_key: api_key,
                 skip_waiting_for_build_processing: true
@@ -110,4 +112,5 @@ jobs:
           APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
           APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
         run: |
+          cd ios
           fastlane beta
