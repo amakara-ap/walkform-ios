@@ -23,6 +23,10 @@ jobs:
         run: |
           xcodegen generate
 
+      - name: Prepare Keychain
+        run: |
+          security unlock-keychain -p "" ~/Library/Keychains/login.keychain-db || true
+
       - name: Setup Fastlane
         run: |
           mkdir -p fastlane
@@ -36,8 +40,6 @@ jobs:
           platform :ios do
             desc "Push a new build to TestFlight"
             lane :beta do
-              setup_ci
-
               key_id = ENV["APPSTORE_KEY_ID"].to_s.strip
               issuer_id = ENV["APPSTORE_ISSUER_ID"].to_s.strip
               raw_key = ENV["APPSTORE_PRIVATE_KEY"].to_s.gsub("\r\n", "\n").strip
@@ -53,7 +55,8 @@ jobs:
               )
 
               get_certificates(
-                api_key: api_key
+                api_key: api_key,
+                skip_set_partition_list: true
               )
 
               get_provisioning_profile(
