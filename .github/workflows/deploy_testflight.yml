@@ -24,13 +24,12 @@ jobs:
 
       - name: Generate Xcode Project
         run: |
-          cd ios
           xcodegen generate
 
       - name: Create Fastfile
         run: |
-          mkdir -p ios/fastlane
-          cat << 'EOF' > ios/fastlane/Fastfile
+          mkdir -p fastlane
+          cat << 'EOF' > fastlane/Fastfile
           default_platform(:ios)
 
           platform :ios do
@@ -44,7 +43,6 @@ jobs:
                 in_house: false
               )
 
-              # 一時キーチェーンを作成してコード署名環境をセットアップ
               keychain_name = "fastlane_tmp_keychain"
               keychain_password = "fastlane_password"
 
@@ -57,7 +55,6 @@ jobs:
                 lock_when_sleeps: false
               )
 
-              # 証明書を生成・インポート
               cert(
                 api_key: api_key,
                 keychain_path: File.expand_path("~/Library/Keychains/#{keychain_name}-db"),
@@ -65,25 +62,21 @@ jobs:
                 skip_set_partition_list: true
               )
 
-              # プロビジョニングプロファイルを生成・インストール
               sigh(
                 api_key: api_key,
                 app_identifier: "com.aistudio.walkform.aiwkgx",
                 force: true
               )
 
-              # プロビジョニングプロファイルからTeam IDを正確に取得
               profile_path = ENV["SIGH_PROFILE_PATH"]
               team_id = sh("security cms -D -i \"#{profile_path}\" | plutil -extract TeamIdentifier.0 raw -").strip
               UI.message("Extracted Team ID: #{team_id}")
 
-              # プロジェクトにTeam IDを設定
               update_project_team(
                 path: "WalkForm.xcodeproj",
                 teamid: team_id
               )
 
-              # アプリのビルド
               build_app(
                 project: "WalkForm.xcodeproj",
                 scheme: "WalkForm",
@@ -97,7 +90,6 @@ jobs:
                 xcargs: "DEVELOPMENT_TEAM=#{team_id}"
               )
 
-              # TestFlightへアップロード
               upload_to_testflight(
                 api_key: api_key,
                 skip_waiting_for_build_processing: true
@@ -112,5 +104,4 @@ jobs:
           APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
           APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
         run: |
-          cd ios
           fastlane beta
