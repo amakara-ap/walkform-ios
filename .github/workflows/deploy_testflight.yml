@@ -36,16 +36,11 @@ jobs:
           platform :ios do
             desc "Push a new build to TestFlight"
             lane :beta do
+              setup_ci
+
               key_id = ENV["APPSTORE_KEY_ID"].to_s.strip
               issuer_id = ENV["APPSTORE_ISSUER_ID"].to_s.strip
               raw_key = ENV["APPSTORE_PRIVATE_KEY"].to_s.gsub("\r\n", "\n").strip
-
-              puts "=== App Store Connect Auth Check ==="
-              puts "Key ID: #{key_id[0..3]}*** (Length: #{key_id.length})"
-              puts "Issuer ID: #{issuer_id[0..7]}*** (Length: #{issuer_id.length})"
-              puts "Private Key Header: #{raw_key.include?('BEGIN PRIVATE KEY')}"
-              puts "Private Key Length: #{raw_key.length}"
-              puts "===================================="
 
               key_path = File.expand_path("~/AuthKey_#{key_id}.p8")
               File.write(key_path, raw_key + "\n")
@@ -57,21 +52,8 @@ jobs:
                 in_house: false
               )
 
-              keychain_name = "ci_keychain"
-              keychain_password = "ci_password_123"
-
-              create_keychain(
-                name: keychain_name,
-                password: keychain_password,
-                default_keychain: true,
-                unlock: true,
-                timeout: 3600
-              )
-
               get_certificates(
-                api_key: api_key,
-                keychain_path: ENV["KEYCHAIN_PATH"],
-                keychain_password: keychain_password
+                api_key: api_key
               )
 
               get_provisioning_profile(
