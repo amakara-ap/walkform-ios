@@ -64,6 +64,18 @@ jobs:
                 app_identifier: "com.aistudio.walkform.aiwkgx"
               )
 
+              team_id = lane_context[SharedValues::SIGH_TEAM_ID]
+              if team_id.nil? || team_id.empty?
+                output = `security cms -D -i "#{ENV['SIGH_PROFILE_PATH']}"`
+                team_id = output[/<key>TeamIdentifier<\/key>\s*<array>\s*<string>([^<]+)<\/string>/m, 1]
+              end
+              puts "=== Detected Apple Team ID: #{team_id} ==="
+
+              update_project_team(
+                path: "WalkForm.xcodeproj",
+                teamid: team_id
+              )
+
               update_project_provisioning(
                 xcodeproj: "WalkForm.xcodeproj",
                 profile: ENV["SIGH_PROFILE_PATH"],
@@ -77,8 +89,10 @@ jobs:
                 configuration: "Release",
                 export_method: "app-store",
                 clean: true,
+                xcargs: "DEVELOPMENT_TEAM=#{team_id} CODE_SIGN_STYLE=Manual",
                 export_options: {
                   signingStyle: "manual",
+                  teamID: team_id,
                   provisioningProfiles: {
                     "com.aistudio.walkform.aiwkgx" => ENV["SIGH_NAME"]
                   }
