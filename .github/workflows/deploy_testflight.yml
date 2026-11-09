@@ -43,8 +43,9 @@ jobs:
                 in_house: false
               )
 
-              keychain_name = "fastlane_tmp_keychain"
-              keychain_password = "fastlane_password"
+              # キーチェーンの作成とデフォルト設定
+              keychain_name = "build_keychain"
+              keychain_password = "temporary_password"
 
               create_keychain(
                 name: keychain_name,
@@ -55,6 +56,7 @@ jobs:
                 lock_when_sleeps: false
               )
 
+              # 証明書を生成し、作成したキーチェーンに直接秘密鍵ごと登録
               cert(
                 api_key: api_key,
                 keychain_path: File.expand_path("~/Library/Keychains/#{keychain_name}-db"),
@@ -62,20 +64,24 @@ jobs:
                 skip_set_partition_list: true
               )
 
+              # プロビジョニングプロファイルの取得/作成
               sigh(
                 api_key: api_key,
                 app_identifier: "com.aistudio.walkform.aiwkgx",
                 force: true
               )
 
-              profile_path = lane_context[SharedValues::SIGH_PROFILE_PATH] || Dir.glob("../*.mobileprovision").first || "AppStore_com.aistudio.walkform.aiwkgx.mobileprovision"
-              profile_name = lane_context[SharedValues::SIGH_NAME]
+              # カレントまたは親ディレクトリからプロビジョニングファイルを特定
+              profile_files = Dir.glob("{.,..}/*.mobileprovision")
+              profile_path = profile_files.first
+              UI.user_error!("No provisioning profile found!") unless profile_path
 
-              UI.message("Target Profile Path: #{profile_path}")
-              UI.message("Target Profile Name: #{profile_name}")
+              UI.message("Using Provisioning Profile: #{profile_path}")
 
               team_id = sh("security cms -D -i \"#{profile_path}\" | plutil -extract TeamIdentifier.0 raw -").strip
+              profile_name = sh("security cms -D -i \"#{profile_path}\" | plutil -extract Name raw -").strip
               UI.message("Extracted Team ID: #{team_id}")
+              UI.message("Extracted Profile Name: #{profile_name}")
 
               update_project_team(
                 path: "WalkForm.xcodeproj",
