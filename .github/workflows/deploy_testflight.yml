@@ -43,7 +43,6 @@ jobs:
                 in_house: false
               )
 
-              # キーチェーンの作成とデフォルト設定
               keychain_name = "build_keychain"
               keychain_password = "temporary_password"
 
@@ -56,7 +55,6 @@ jobs:
                 lock_when_sleeps: false
               )
 
-              # 証明書を生成し、作成したキーチェーンに直接秘密鍵ごと登録
               cert(
                 api_key: api_key,
                 keychain_path: File.expand_path("~/Library/Keychains/#{keychain_name}-db"),
@@ -64,41 +62,50 @@ jobs:
                 skip_set_partition_list: true
               )
 
-              # プロビジョニングプロファイルの取得/作成
               sigh(
                 api_key: api_key,
                 app_identifier: "com.aistudio.walkform.aiwkgx",
                 force: true
               )
 
-              # カレントまたは親ディレクトリからプロビジョニングファイルを特定
               profile_files = Dir.glob("{.,..}/*.mobileprovision")
               profile_path = profile_files.first
               UI.user_error!("No provisioning profile found!") unless profile_path
 
-              UI.message("Using Provisioning Profile: #{profile_path}")
-
               team_id = sh("security cms -D -i \"#{profile_path}\" | plutil -extract TeamIdentifier.0 raw -").strip
               profile_name = sh("security cms -D -i \"#{profile_path}\" | plutil -extract Name raw -").strip
+              profile_uuid = sh("security cms -D -i \"#{profile_path}\" | plutil -extract UUID raw -").strip
+
               UI.message("Extracted Team ID: #{team_id}")
               UI.message("Extracted Profile Name: #{profile_name}")
+              UI.message("Extracted Profile UUID: #{profile_uuid}")
 
               update_project_team(
                 path: "WalkForm.xcodeproj",
                 teamid: team_id
               )
 
+              # Xcodeの署名設定をReleaseビルド向けに強制適用
+              update_project_provisioning(
+                xcodeproj: "WalkForm.xcodeproj",
+                profile: profile_path,
+                target_filter: "WalkForm",
+                build_configuration: "Release"
+              )
+
               build_app(
                 project: "WalkForm.xcodeproj",
                 scheme: "WalkForm",
+                configuration: "Release",
                 export_method: "app-store",
                 export_options: {
                   signingStyle: "manual",
+                  teamID: team_id,
                   provisioningProfiles: {
                     "com.aistudio.walkform.aiwkgx" => profile_name
                   }
                 },
-                xcargs: "DEVELOPMENT_TEAM=#{team_id}"
+                xcargs: "DEVELOPMENT_TEAM=#{team_id} PROVISIONING_PROFILE_SPECIFIER=\"#{profile_name}\" CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=\"Apple Distribution\""
               )
 
               upload_to_testflight(
